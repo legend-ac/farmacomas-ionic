@@ -137,6 +137,14 @@ export class FirebaseDataService {
     return { medicines, customers, orders };
   }
 
+  /** Atomic: saves order + updates medicine stock in a single batch commit */
+  async saveOrderAndUpdateStock(order: Order, medicine: Medicine): Promise<void> {
+    const batch = writeBatch(this.db);
+    batch.set(doc(this.db, 'pedidos', String(order.id)), this.toFirestoreOrder(order));
+    batch.set(doc(this.db, 'medicamentos', String(medicine.id)), this.toFirestoreMedicine(medicine));
+    await batch.commit();
+  }
+
   async syncAll(medicines: Medicine[], customers: Customer[], orders: Order[]): Promise<void> {
     const batch = writeBatch(this.db);
 
