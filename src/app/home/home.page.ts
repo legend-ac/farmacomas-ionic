@@ -4,6 +4,19 @@ import { AppData, Customer, Medicine, Order } from '../core/models';
 import { FirebaseAuthService } from '../services/firebase-auth.service';
 import { FirebaseDataService } from '../services/firebase-data.service';
 
+type DataCollection = 'medicamentos' | 'clientes' | 'pedidos';
+
+interface PendingDeletes {
+  medicamentos: number[];
+  clientes: number[];
+  pedidos: number[];
+}
+
+interface LocalAppState extends AppData {
+  pendingDeletes?: PendingDeletes;
+  pendingChanges?: boolean;
+}
+
 @Component({
   selector: 'app-home',
   templateUrl: 'home.page.html',
@@ -14,8 +27,9 @@ export class HomePage implements OnDestroy {
   selectedSegment: 'dashboard' | 'inventory' | 'customers' | 'orders' = 'dashboard';
   firebaseStatus = 'Conectando...';
   actionMessage = 'Inicia sesion para atender.';
-  isOnline = false;
+  isOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
   authReady = false;
+  pendingChanges = false;
   currentUser: User | null = null;
   authMode: 'login' | 'register' = 'login';
   authMessage = '';
@@ -83,17 +97,45 @@ export class HomePage implements OnDestroy {
 
   private authUnsubscribe: Unsubscribe | null = null;
   private dataUnsubscribe: Unsubscribe | null = null;
+  private syncTimer: ReturnType<typeof window.setInterval> | null = null;
+  private isSyncing = false;
+  private pendingDeletes: PendingDeletes = {
+    medicamentos: [],
+    clientes: [],
+    pedidos: [],
+  };
+  private readonly handleOnline = () => {
+    this.isOnline = true;
+    this.updateStatus();
+    void this.syncPendingChanges();
+  };
+  private readonly handleOffline = () => {
+    this.isOnline = false;
+    this.updateStatus();
+    this.actionMessage = 'Sin internet. Los cambios quedan guardados aqui.';
+  };
 
   constructor(
     private readonly firebaseAuthService: FirebaseAuthService,
     private readonly firebaseDataService: FirebaseDataService
   ) {
+    window.addEventListener('online', this.handleOnline);
+    window.addEventListener('offline', this.handleOffline);
+    this.syncTimer = window.setInterval(() => {
+      void this.syncPendingChanges();
+    }, 15000);
+
     this.authUnsubscribe = this.firebaseAuthService.onUserChanged((user) => {
       void this.handleAuthState(user);
     });
   }
 
   ngOnDestroy(): void {
+    window.removeEventListener('online', this.handleOnline);
+    window.removeEventListener('offline', this.handleOffline);
+    if (this.syncTimer) {
+      window.clearInterval(this.syncTimer);
+    }
     this.authUnsubscribe?.();
     this.dataUnsubscribe?.();
   }
@@ -229,7 +271,7 @@ export class HomePage implements OnDestroy {
     this.medicineForm = { name: '', category: '', stock: 0, minStock: 5, price: 0 };
     this.editingMedicineId = null;
     this.actionMessage = 'Medicamento guardado.';
-    this.saveData();
+    this.markPendingChange();
     void this.saveMedicineToCloud(medicine);
   }
 
@@ -272,7 +314,7 @@ export class HomePage implements OnDestroy {
     this.customerForm = { name: '', phone: '', district: '' };
     this.editingCustomerId = null;
     this.actionMessage = 'Cliente guardado.';
-    this.saveData();
+    this.markPendingChange();
     void this.saveCustomerToCloud(customer);
   }
 
@@ -332,7 +374,7 @@ export class HomePage implements OnDestroy {
 
     this.orderForm = { customerId: 0, medicineId: 0, quantity: 1 };
     this.actionMessage = 'Pedido creado y stock descontado.';
-    this.saveData();
+    this.markPendingChange();
     void this.saveOrderWithStockAtomic(order, updatedMedicine);
   }
 
@@ -346,7 +388,7 @@ export class HomePage implements OnDestroy {
     );
 
     this.actionMessage = 'Pedido entregado.';
-    this.saveData();
+    this.markPendingChange();
 
     if (updatedOrder) {
       void this.saveOrderToCloud(updatedOrder);
@@ -367,7 +409,8 @@ export class HomePage implements OnDestroy {
 
     this.medicines = this.medicines.filter((medicine) => medicine.id !== medicineId);
     this.actionMessage = 'Medicamento eliminado.';
-    this.saveData();
+    this.queueDelete('medicamentos', medicineId);
+    this.markPendingChange();
     void this.deleteMedicineFromCloud(medicineId);
   }
 
@@ -385,7 +428,8 @@ export class HomePage implements OnDestroy {
 
     this.customers = this.customers.filter((customer) => customer.id !== customerId);
     this.actionMessage = 'Cliente eliminado.';
-    this.saveData();
+    this.queueDelete('clientes', customerId);
+    this.markPendingChange();
     void this.deleteCustomerFromCloud(customerId);
   }
 
@@ -394,7 +438,8 @@ export class HomePage implements OnDestroy {
 
     this.orders = this.orders.filter((order) => order.id !== orderId);
     this.actionMessage = 'Pedido eliminado.';
-    this.saveData();
+    this.queueDelete('pedidos', orderId);
+    this.markPendingChange();
     void this.deleteOrderFromCloud(orderId);
   }
 
@@ -414,8 +459,8 @@ export class HomePage implements OnDestroy {
 
     if (!user) {
       this.resetData();
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin sesion';
+      this.isOnline = this.hasInternet();
+      this.firebaseStatus = this.hasInternet() ? 'Acceso seguro' : 'Sin internet';
       this.actionMessage = 'Inicia sesion para atender.';
       return;
     }
@@ -433,10 +478,10 @@ export class HomePage implements OnDestroy {
       return;
     }
 
-    let parsedData: AppData;
+    let parsedData: LocalAppState;
 
     try {
-      parsedData = JSON.parse(savedData) as AppData;
+      parsedData = JSON.parse(savedData) as LocalAppState;
     } catch {
       localStorage.removeItem(this.localStorageKey(userId));
       this.actionMessage = 'Se limpio una copia local invalida. El sistema sigue operativo.';
@@ -444,6 +489,9 @@ export class HomePage implements OnDestroy {
     }
 
     this.applyData(parsedData);
+    this.pendingDeletes = parsedData.pendingDeletes ?? this.emptyPendingDeletes();
+    this.pendingChanges = !!parsedData.pendingChanges;
+    this.updateStatus();
   }
 
   private saveData(): void {
@@ -455,139 +503,169 @@ export class HomePage implements OnDestroy {
         medicines: this.medicines,
         customers: this.customers,
         orders: this.orders,
+        pendingDeletes: this.pendingDeletes,
+        pendingChanges: this.pendingChanges,
       })
     );
   }
 
   private async syncFromFirebase(): Promise<void> {
     try {
+      if (!this.hasInternet()) {
+        throw new Error('OFFLINE');
+      }
+
       await this.firebaseDataService.testConnection();
       const remoteData = await this.firebaseDataService.loadAll();
       const hasRemoteData =
         remoteData.medicines.length > 0 || remoteData.customers.length > 0 || remoteData.orders.length > 0;
 
-      if (hasRemoteData) {
+      if (hasRemoteData && !this.pendingChanges) {
         this.applyData(remoteData);
-      } else if (this.medicines.length > 0 || this.customers.length > 0 || this.orders.length > 0) {
-        await this.firebaseDataService.syncAll(this.medicines, this.customers, this.orders);
+      } else if (this.pendingChanges || this.medicines.length > 0 || this.customers.length > 0 || this.orders.length > 0) {
+        const uploaded = await this.syncToCloud();
+        if (!uploaded) {
+          throw new Error('SYNC_FAILED');
+        }
       }
 
       this.saveData();
       this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
-      this.actionMessage = 'Listo para atender.';
+      this.updateStatus();
+      if (!this.pendingChanges) {
+        this.actionMessage = 'Listo para atender.';
+      }
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
-      this.actionMessage = 'Cambios guardados localmente.';
+      this.isOnline = this.hasInternet();
+      this.updateStatus();
+      this.actionMessage = this.hasInternet()
+        ? 'Datos locales activos. Se reintentara automaticamente.'
+        : 'Sin internet. Los cambios quedan guardados aqui.';
     }
   }
 
   private startRealtimeSync(): void {
     this.dataUnsubscribe = this.firebaseDataService.subscribeToUserData(
       (data) => {
+        if (this.pendingChanges) {
+          return;
+        }
+
         this.applyData(data);
         this.saveData();
-        this.isOnline = true;
-        this.firebaseStatus = 'Datos actualizados';
+        this.isOnline = this.hasInternet();
+        this.updateStatus();
       },
       () => {
-        this.isOnline = false;
-        this.firebaseStatus = 'Sin conexion';
+        this.isOnline = this.hasInternet();
+        this.updateStatus();
       }
     );
   }
 
-  private async syncToCloud(): Promise<void> {
+  private async syncToCloud(): Promise<boolean> {
     try {
+      if (!this.hasInternet()) {
+        throw new Error('OFFLINE');
+      }
+
+      this.isSyncing = true;
+      this.updateStatus();
+      await this.flushPendingDeletes();
       await this.firebaseDataService.syncAll(this.medicines, this.customers, this.orders);
+      this.pendingChanges = false;
       this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      this.isSyncing = false;
+      this.updateStatus();
       this.actionMessage = 'Datos sincronizados correctamente.';
+      this.saveData();
+      return true;
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
-      this.actionMessage = 'Cambios guardados localmente.';
+      this.isOnline = this.hasInternet();
+      this.isSyncing = false;
+      this.pendingChanges = true;
+      this.updateStatus();
+      this.actionMessage = this.hasInternet()
+        ? 'Datos guardados localmente. Se reintentara automaticamente.'
+        : 'Sin internet. Los cambios quedan guardados aqui.';
+      this.saveData();
+      return false;
     }
   }
 
   private async saveMedicineToCloud(medicine: Medicine): Promise<void> {
     try {
+      if (!this.hasInternet()) throw new Error('OFFLINE');
       await this.firebaseDataService.saveMedicine(medicine);
       await this.syncChangedOrderNames();
-      this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      await this.syncPendingChanges();
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
+      this.keepLocalPending();
     }
   }
 
   private async saveCustomerToCloud(customer: Customer): Promise<void> {
     try {
+      if (!this.hasInternet()) throw new Error('OFFLINE');
       await this.firebaseDataService.saveCustomer(customer);
       await this.syncChangedOrderNames();
-      this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      await this.syncPendingChanges();
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
+      this.keepLocalPending();
     }
   }
 
   private async saveOrderToCloud(order: Order): Promise<void> {
     try {
+      if (!this.hasInternet()) throw new Error('OFFLINE');
       await this.firebaseDataService.saveOrder(order);
-      this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      await this.syncPendingChanges();
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
+      this.keepLocalPending();
     }
   }
 
   private async saveOrderWithStockAtomic(order: Order, medicine: Medicine): Promise<void> {
     try {
+      if (!this.hasInternet()) throw new Error('OFFLINE');
       await this.firebaseDataService.saveOrderAndUpdateStock(order, medicine);
-      this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      await this.syncPendingChanges();
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
+      this.keepLocalPending();
       this.actionMessage = 'Pedido guardado localmente.';
     }
   }
 
   private async deleteMedicineFromCloud(medicineId: number): Promise<void> {
     try {
+      if (!this.hasInternet()) throw new Error('OFFLINE');
       await this.firebaseDataService.deleteMedicine(medicineId);
-      this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      this.removeQueuedDelete('medicamentos', medicineId);
+      await this.syncPendingChanges();
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
+      this.keepLocalPending();
     }
   }
 
   private async deleteCustomerFromCloud(customerId: number): Promise<void> {
     try {
+      if (!this.hasInternet()) throw new Error('OFFLINE');
       await this.firebaseDataService.deleteCustomer(customerId);
-      this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      this.removeQueuedDelete('clientes', customerId);
+      await this.syncPendingChanges();
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
+      this.keepLocalPending();
     }
   }
 
   private async deleteOrderFromCloud(orderId: number): Promise<void> {
     try {
+      if (!this.hasInternet()) throw new Error('OFFLINE');
       await this.firebaseDataService.deleteOrder(orderId);
-      this.isOnline = true;
-      this.firebaseStatus = 'Datos actualizados';
+      this.removeQueuedDelete('pedidos', orderId);
+      await this.syncPendingChanges();
     } catch {
-      this.isOnline = false;
-      this.firebaseStatus = 'Sin conexion';
+      this.keepLocalPending();
     }
   }
 
@@ -630,6 +708,8 @@ export class HomePage implements OnDestroy {
     this.medicines = [];
     this.customers = [];
     this.orders = [];
+    this.pendingChanges = false;
+    this.pendingDeletes = this.emptyPendingDeletes();
     this.editingMedicineId = null;
     this.editingCustomerId = null;
     this.orderForm = { customerId: 0, medicineId: 0, quantity: 1 };
@@ -644,6 +724,89 @@ export class HomePage implements OnDestroy {
 
   private localStorageKey(userId: string): string {
     return `farmacomas-ionic-data-${userId}`;
+  }
+
+  private markPendingChange(): void {
+    this.pendingChanges = true;
+    this.updateStatus();
+    this.saveData();
+  }
+
+  private keepLocalPending(): void {
+    this.isOnline = this.hasInternet();
+    this.pendingChanges = true;
+    this.updateStatus();
+    this.saveData();
+  }
+
+  private async syncPendingChanges(): Promise<void> {
+    if (!this.currentUser || !this.pendingChanges || this.isSyncing || !this.hasInternet()) {
+      this.updateStatus();
+      return;
+    }
+
+    await this.syncToCloud();
+  }
+
+  private async flushPendingDeletes(): Promise<void> {
+    const deletes = this.pendingDeletes;
+
+    await Promise.all([
+      ...deletes.medicamentos.map((id) => this.firebaseDataService.deleteMedicine(id)),
+      ...deletes.clientes.map((id) => this.firebaseDataService.deleteCustomer(id)),
+      ...deletes.pedidos.map((id) => this.firebaseDataService.deleteOrder(id)),
+    ]);
+
+    this.pendingDeletes = this.emptyPendingDeletes();
+  }
+
+  private queueDelete(collection: DataCollection, id: number): void {
+    if (!this.pendingDeletes[collection].includes(id)) {
+      this.pendingDeletes[collection] = [...this.pendingDeletes[collection], id];
+    }
+  }
+
+  private removeQueuedDelete(collection: DataCollection, id: number): void {
+    this.pendingDeletes[collection] = this.pendingDeletes[collection].filter((item) => item !== id);
+    this.saveData();
+  }
+
+  private emptyPendingDeletes(): PendingDeletes {
+    return {
+      medicamentos: [],
+      clientes: [],
+      pedidos: [],
+    };
+  }
+
+  private hasInternet(): boolean {
+    return typeof navigator === 'undefined' ? true : navigator.onLine;
+  }
+
+  private updateStatus(): void {
+    this.isOnline = this.hasInternet();
+
+    if (!this.authReady) {
+      this.firebaseStatus = 'Preparando...';
+      return;
+    }
+
+    if (!this.currentUser) {
+      this.firebaseStatus = this.isOnline ? 'Acceso seguro' : 'Sin internet';
+      return;
+    }
+
+    if (!this.isOnline) {
+      this.firebaseStatus = this.pendingChanges ? 'Guardado local' : 'Sin internet';
+      return;
+    }
+
+    if (this.isSyncing) {
+      this.firebaseStatus = 'Sincronizando...';
+      return;
+    }
+
+    this.firebaseStatus = this.pendingChanges ? 'Pendiente de subir' : 'Datos actualizados';
   }
 
   private createId(): number {
