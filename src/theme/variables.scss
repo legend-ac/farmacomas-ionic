@@ -1,0 +1,68 @@
+/* ===== FARMACOMAS DESIGN SYSTEM ===== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+:root {
+  --fc-emerald-50: #ecfdf5;
+  --fc-emerald-100: #d1fae5;
+  --fc-emerald-200: #a7f3d0;
+  --fc-emerald-400: #34d399;
+  --fc-emerald-500: #10b981;
+  --fc-emerald-600: #059669;
+  --fc-emerald-700: #047857;
+
+  --fc-blue-400: #60a5fa;
+  --fc-blue-500: #3b82f6;
+  --fc-blue-600: #2563eb;
+
+  --fc-violet-400: #a78bfa;
+  --fc-violet-500: #8b5cf6;
+
+  --fc-amber-400: #fbbf24;
+  --fc-amber-500: #f59e0b;
+
+  --fc-rose-400: #fb7185;
+  --fc-rose-500: #f43f5e;
+
+  --fc-bg: #f4f7fb;
+  --fc-surface-1: #ffffff;
+  --fc-surface-2: #ffffff;
+  --fc-surface-3: #f9fafb;
+  --fc-border: #e5e7eb;
+  --fc-border-md: #d1d5db;
+
+  --fc-text-primary: #111827;
+  --fc-text-secondary: #4b5563;
+  --fc-text-muted: #6b7280;
+
+  --fc-radius-sm: 8px;
+  --fc-radius-md: 12px;
+  --fc-radius-lg: 16px;
+  --fc-radius-xl: 20px;
+
+  --fc-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --fc-transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+
+  --ion-font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ion-background-color: var(--fc-bg);
+  --ion-text-color: var(--fc-text-primary);
+  --ion-toolbar-background: var(--fc-surface-1);
+  --ion-item-background: transparent;
+  --ion-card-background: var(--fc-surface-2);
+
+  --ion-color-primary: var(--fc-emerald-500);
+  --ion-color-primary-rgb: 16, 185, 129;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-shade: var(--fc-emerald-600);
+  --ion-color-primary-tint: var(--fc-emerald-400);
+
+  --ion-color-secondary: var(--fc-blue-500);
+  --ion-color-secondary-rgb: 59, 130, 246;
+  --ion-color-secondary-contrast: #ffffff;
+  --ion-color-secondary-shade: var(--fc-blue-600);
+  --ion-color-secondary-tint: var(--fc-blue-400);
+
+  --ion-color-success: var(--fc-emerald-500);
+  --ion-color-warning: var(--fc-amber-500);
+  --ion-color-danger: var(--fc-rose-500);
+}
