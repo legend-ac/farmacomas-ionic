@@ -15,6 +15,9 @@ describe('HomePage', () => {
     getOrders: jasmine.createSpy('getOrders').and.resolveTo([]),
     loadAll: jasmine.createSpy('loadAll').and.resolveTo({ medicines: [], customers: [], orders: [] }),
     syncAll: jasmine.createSpy('syncAll').and.resolveTo(),
+    saveMedicine: jasmine.createSpy('saveMedicine').and.resolveTo(),
+    saveCustomer: jasmine.createSpy('saveCustomer').and.resolveTo(),
+    saveOrder: jasmine.createSpy('saveOrder').and.resolveTo(),
     deleteMedicine: jasmine.createSpy('deleteMedicine').and.resolveTo(),
     deleteCustomer: jasmine.createSpy('deleteCustomer').and.resolveTo(),
     deleteOrder: jasmine.createSpy('deleteOrder').and.resolveTo(),
@@ -69,6 +72,11 @@ describe('HomePage', () => {
   });
 
   it('should create an order and discount stock', () => {
+    component.medicines = [
+      { id: 1, name: 'Paracetamol 500 mg', category: 'Analgesico', stock: 10, minStock: 4, price: 1.5 },
+    ];
+    component.customers = [{ id: 1, name: 'Maria Torres', phone: '987654321', district: 'Comas' }];
+
     const originalStock = component.medicines[0].stock;
 
     component.orderForm = {

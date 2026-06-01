@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { initializeApp } from 'firebase/app';
+import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   collection,
   deleteDoc,
@@ -46,7 +46,7 @@ export class FirebaseDataService {
   private readonly db: Firestore;
 
   constructor() {
-    const app = initializeApp(environment.firebase);
+    const app = getApps().length > 0 ? getApp() : initializeApp(environment.firebase);
     this.db = getFirestore(app);
   }
 
@@ -62,11 +62,11 @@ export class FirebaseDataService {
 
       return {
         id: Number(item.id) || Date.now(),
-        name: data.nombre,
-        category: data.categoria,
-        stock: data.stockActual,
-        minStock: data.stockMinimo,
-        price: data.precioVenta,
+        name: data.nombre ?? 'Sin nombre',
+        category: data.categoria ?? 'General',
+        stock: Number(data.stockActual ?? 0),
+        minStock: Number(data.stockMinimo ?? 0),
+        price: Number(data.precioVenta ?? 0),
       };
     });
   }
@@ -79,9 +79,9 @@ export class FirebaseDataService {
 
       return {
         id: Number(item.id) || Date.now(),
-        name: data.nombre,
-        phone: data.telefono,
-        district: data.direccion,
+        name: data.nombre ?? 'Sin nombre',
+        phone: data.telefono ?? '',
+        district: data.direccion ?? '',
       };
     });
   }
@@ -94,11 +94,11 @@ export class FirebaseDataService {
 
       return {
         id: Number(item.id) || Date.now(),
-        customerName: data.clienteNombre,
-        medicineName: data.medicamentoNombre,
-        quantity: data.cantidad,
-        status: data.estado,
-        createdAt: data.creadoEn,
+        customerName: data.clienteNombre ?? 'Cliente',
+        medicineName: data.medicamentoNombre ?? 'Medicamento',
+        quantity: Number(data.cantidad ?? 1),
+        status: data.estado === 'Entregado' ? 'Entregado' : 'Pendiente',
+        createdAt: data.creadoEn ?? new Date().toISOString().slice(0, 10),
       };
     });
   }

@@ -10,32 +10,15 @@ import { FirebaseDataService } from '../services/firebase-data.service';
 })
 export class HomePage {
   selectedSegment: 'dashboard' | 'inventory' | 'customers' | 'orders' = 'dashboard';
-  firebaseStatus = 'Conectando con Firebase...';
-  actionMessage = 'Sistema listo para registrar operaciones.';
+  firebaseStatus = 'Conectando...';
+  actionMessage = 'Listo para atender.';
+  isOnline = true;
   editingMedicineId: number | null = null;
   editingCustomerId: number | null = null;
 
-  medicines: Medicine[] = [
-    { id: 1, name: 'Paracetamol 500 mg', category: 'Analgesico', stock: 24, minStock: 10, price: 1.5 },
-    { id: 2, name: 'Amoxicilina 500 mg', category: 'Antibiotico', stock: 8, minStock: 12, price: 3.2 },
-    { id: 3, name: 'Loratadina 10 mg', category: 'Antialergico', stock: 18, minStock: 8, price: 1.8 },
-  ];
-
-  customers: Customer[] = [
-    { id: 1, name: 'Maria Torres', phone: '987654321', district: 'Los Olivos' },
-    { id: 2, name: 'Carlos Ramos', phone: '956123478', district: 'Comas' },
-  ];
-
-  orders: Order[] = [
-    {
-      id: 1,
-      customerName: 'Maria Torres',
-      medicineName: 'Paracetamol 500 mg',
-      quantity: 2,
-      status: 'Pendiente',
-      createdAt: '2026-05-31',
-    },
-  ];
+  medicines: Medicine[] = [];
+  customers: Customer[] = [];
+  orders: Order[] = [];
 
   medicineForm = {
     name: '',
@@ -61,26 +44,26 @@ export class HomePage {
     {
       id: 'dashboard' as const,
       icon: 'analytics-outline',
-      label: 'Resumen',
-      description: 'Indicadores y alertas',
+      label: 'Inicio',
+      description: 'Resumen del dia',
     },
     {
       id: 'inventory' as const,
       icon: 'medkit-outline',
       label: 'Inventario',
-      description: 'Stock y precios',
+      description: 'Medicamentos',
     },
     {
       id: 'customers' as const,
       icon: 'people-outline',
       label: 'Clientes',
-      description: 'Datos de contacto',
+      description: 'Contactos',
     },
     {
       id: 'orders' as const,
       icon: 'receipt-outline',
       label: 'Pedidos',
-      description: 'Ventas y entregas',
+      description: 'Atenciones',
     },
   ];
 
@@ -105,18 +88,22 @@ export class HomePage {
     return this.medicines.filter((medicine) => medicine.stock <= medicine.minStock);
   }
 
+  get deliveredOrdersCount(): number {
+    return this.orders.filter((order) => order.status === 'Entregado').length;
+  }
+
   selectSection(section: 'dashboard' | 'inventory' | 'customers' | 'orders'): void {
     this.selectedSegment = section;
   }
 
   addMedicine(): void {
     if (!this.medicineForm.name.trim() || !this.medicineForm.category.trim()) {
-      this.actionMessage = 'Completa nombre y categoria para registrar el medicamento.';
+      this.actionMessage = 'Ingresa el nombre y la categoria del medicamento.';
       return;
     }
 
     if (this.medicineForm.stock < 0 || this.medicineForm.minStock < 0 || this.medicineForm.price < 0) {
-      this.actionMessage = 'Stock, minimo y precio no pueden ser negativos.';
+      this.actionMessage = 'Revisa los numeros: no pueden ser negativos.';
       return;
     }
 
@@ -135,8 +122,9 @@ export class HomePage {
 
     this.medicineForm = { name: '', category: '', stock: 0, minStock: 5, price: 0 };
     this.editingMedicineId = null;
-    this.actionMessage = 'Medicamento guardado y stock actualizado.';
-    this.persistChanges();
+    this.actionMessage = 'Medicamento guardado.';
+    this.saveData();
+    void this.saveMedicineToCloud(medicine);
   }
 
   editMedicine(medicine: Medicine): void {
@@ -149,12 +137,12 @@ export class HomePage {
       price: medicine.price,
     };
     this.selectedSegment = 'inventory';
-    this.actionMessage = 'Editando medicamento seleccionado.';
+    this.actionMessage = 'Editando medicamento.';
   }
 
   addCustomer(): void {
     if (!this.customerForm.name.trim() || !this.customerForm.phone.trim()) {
-      this.actionMessage = 'Completa nombre y telefono para registrar el cliente.';
+      this.actionMessage = 'Ingresa el nombre y telefono del cliente.';
       return;
     }
 
@@ -171,8 +159,9 @@ export class HomePage {
 
     this.customerForm = { name: '', phone: '', district: '' };
     this.editingCustomerId = null;
-    this.actionMessage = 'Cliente guardado correctamente.';
-    this.persistChanges();
+    this.actionMessage = 'Cliente guardado.';
+    this.saveData();
+    void this.saveCustomerToCloud(customer);
   }
 
   editCustomer(customer: Customer): void {
@@ -183,71 +172,81 @@ export class HomePage {
       district: customer.district,
     };
     this.selectedSegment = 'customers';
-    this.actionMessage = 'Editando cliente seleccionado.';
+    this.actionMessage = 'Editando cliente.';
   }
 
   createOrder(): void {
     if (!this.orderForm.customerName || !this.orderForm.medicineName || this.orderForm.quantity < 1) {
-      this.actionMessage = 'Selecciona cliente, medicamento y una cantidad valida.';
+      this.actionMessage = 'Selecciona cliente, medicamento y cantidad.';
       return;
     }
 
     const selectedMedicine = this.medicines.find((medicine) => medicine.name === this.orderForm.medicineName);
 
     if (!selectedMedicine || selectedMedicine.stock < this.orderForm.quantity) {
-      this.actionMessage = 'No hay stock suficiente para generar el pedido.';
+      this.actionMessage = 'No hay stock suficiente para este pedido.';
       return;
     }
 
+    const order: Order = {
+      id: Date.now(),
+      customerName: this.orderForm.customerName,
+      medicineName: this.orderForm.medicineName,
+      quantity: Number(this.orderForm.quantity),
+      status: 'Pendiente',
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+
+    const updatedMedicine = {
+      ...selectedMedicine,
+      stock: selectedMedicine.stock - Number(this.orderForm.quantity),
+    };
+
     this.medicines = this.medicines.map((medicine) =>
-      medicine.id === selectedMedicine.id
-        ? { ...medicine, stock: medicine.stock - Number(this.orderForm.quantity) }
-        : medicine
+      medicine.id === selectedMedicine.id ? updatedMedicine : medicine
     );
 
-    this.orders = [
-      {
-        id: Date.now(),
-        customerName: this.orderForm.customerName,
-        medicineName: this.orderForm.medicineName,
-        quantity: Number(this.orderForm.quantity),
-        status: 'Pendiente',
-        createdAt: new Date().toISOString().slice(0, 10),
-      },
-      ...this.orders,
-    ];
+    this.orders = [order, ...this.orders];
 
     this.orderForm = { customerName: '', medicineName: '', quantity: 1 };
-    this.actionMessage = 'Pedido generado y stock descontado automaticamente.';
-    this.persistChanges();
+    this.actionMessage = 'Pedido creado y stock descontado.';
+    this.saveData();
+    void this.saveOrderWithStockToCloud(order, updatedMedicine);
   }
 
   completeOrder(orderId: number): void {
+    let updatedOrder: Order | undefined;
+
     this.orders = this.orders.map((order) =>
-      order.id === orderId ? { ...order, status: 'Entregado' } : order
+      order.id === orderId ? (updatedOrder = { ...order, status: 'Entregado' }) : order
     );
-    this.actionMessage = 'Pedido marcado como entregado.';
-    this.persistChanges();
+
+    this.actionMessage = 'Pedido entregado.';
+    this.saveData();
+
+    if (updatedOrder) {
+      void this.saveOrderToCloud(updatedOrder);
+    }
   }
 
   deleteMedicine(medicineId: number): void {
     this.medicines = this.medicines.filter((medicine) => medicine.id !== medicineId);
-    this.actionMessage = 'Medicamento eliminado del inventario local.';
-    this.persistChanges();
+    this.actionMessage = 'Medicamento eliminado.';
+    this.saveData();
     void this.deleteMedicineFromFirebase(medicineId);
   }
 
   deleteCustomer(customerId: number): void {
     this.customers = this.customers.filter((customer) => customer.id !== customerId);
-    this.actionMessage = 'Cliente eliminado del registro local.';
-    this.persistChanges();
+    this.actionMessage = 'Cliente eliminado.';
+    this.saveData();
     void this.deleteCustomerFromFirebase(customerId);
   }
 
   deleteOrder(orderId: number): void {
     this.orders = this.orders.filter((order) => order.id !== orderId);
-    this.actionMessage = 'Pedido eliminado del historial local.';
-    this.persistChanges();
+    this.actionMessage = 'Pedido eliminado.';
+    this.saveData();
     void this.deleteOrderFromFirebase(orderId);
   }
 
@@ -312,45 +311,103 @@ export class HomePage {
       }
 
       this.saveData();
-      this.firebaseStatus = 'Firebase conectado';
+      this.isOnline = true;
+      this.firebaseStatus = 'Conectado';
     } catch {
-      this.firebaseStatus = 'Modo local activo. Revisa internet o reglas de Firestore.';
+      this.firebaseStatus = 'Sin conexion';
     }
   }
 
   private async syncToFirebase(): Promise<void> {
     try {
       await this.firebaseDataService.syncAll(this.medicines, this.customers, this.orders);
-      this.firebaseStatus = 'Firebase sincronizado';
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
+      this.actionMessage = 'Datos actualizados.';
     } catch {
-      this.firebaseStatus = 'Datos guardados localmente. Firebase no acepto la sincronizacion.';
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
+      this.actionMessage = 'Cambios guardados en este equipo.';
+    }
+  }
+
+  private async saveMedicineToCloud(medicine: Medicine): Promise<void> {
+    try {
+      await this.firebaseDataService.saveMedicine(medicine);
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
+    } catch {
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
+    }
+  }
+
+  private async saveCustomerToCloud(customer: Customer): Promise<void> {
+    try {
+      await this.firebaseDataService.saveCustomer(customer);
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
+    } catch {
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
+    }
+  }
+
+  private async saveOrderToCloud(order: Order): Promise<void> {
+    try {
+      await this.firebaseDataService.saveOrder(order);
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
+    } catch {
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
+    }
+  }
+
+  private async saveOrderWithStockToCloud(order: Order, medicine: Medicine): Promise<void> {
+    try {
+      await Promise.all([
+        this.firebaseDataService.saveOrder(order),
+        this.firebaseDataService.saveMedicine(medicine),
+      ]);
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
+    } catch {
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
     }
   }
 
   private async deleteMedicineFromFirebase(medicineId: number): Promise<void> {
     try {
       await this.firebaseDataService.deleteMedicine(medicineId);
-      this.firebaseStatus = 'Medicamento eliminado en Firebase';
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
     } catch {
-      this.firebaseStatus = 'Medicamento eliminado localmente. Firebase no acepto el cambio.';
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
     }
   }
 
   private async deleteCustomerFromFirebase(customerId: number): Promise<void> {
     try {
       await this.firebaseDataService.deleteCustomer(customerId);
-      this.firebaseStatus = 'Cliente eliminado en Firebase';
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
     } catch {
-      this.firebaseStatus = 'Cliente eliminado localmente. Firebase no acepto el cambio.';
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
     }
   }
 
   private async deleteOrderFromFirebase(orderId: number): Promise<void> {
     try {
       await this.firebaseDataService.deleteOrder(orderId);
-      this.firebaseStatus = 'Pedido eliminado en Firebase';
+      this.isOnline = true;
+      this.firebaseStatus = 'Actualizado';
     } catch {
-      this.firebaseStatus = 'Pedido eliminado localmente. Firebase no acepto el cambio.';
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin conexion';
     }
   }
 }

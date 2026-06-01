@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.farmacomas.control',
+  appId: 'com.example.farmacommas_control',
   appName: 'Farmacomas Control',
   webDir: 'www',
   server: {

@@ -3,138 +3,151 @@
     <div class="toolbar-shell">
       <div class="brand">
         <span class="brand-mark">
-          <ion-icon name="medkit"></ion-icon>
+          <ion-icon name="medical"></ion-icon>
         </span>
         <div>
           <strong>Farmacomas</strong>
-          <small>Control de botica</small>
+          <small>Atencion y control de botica</small>
         </div>
       </div>
 
-      <div class="sync-state" [class.online]="firebaseStatus.includes('conectado') || firebaseStatus.includes('sincronizado')">
-        <span></span>
-        {{ firebaseStatus.includes('conectado') || firebaseStatus.includes('sincronizado') ? 'Firebase activo' : 'Modo local' }}
-      </div>
+      <button type="button" class="icon-action" title="Actualizar datos" (click)="syncNow()">
+        <ion-icon name="refresh-outline"></ion-icon>
+      </button>
     </div>
   </ion-toolbar>
 </ion-header>
 
 <ion-content class="app-content">
-  <section class="summary-band">
-    <div class="summary-copy">
-      <p>Ionic + Angular + Firebase</p>
-      <h1>Gestion movil para farmacia</h1>
-      <span>Inventario, clientes y pedidos con control de stock y sincronizacion en Firestore.</span>
+  <main class="app-shell">
+    <section class="hero-panel">
+      <div>
+        <p>Panel de hoy</p>
+        <h1>Control rapido de ventas e inventario</h1>
+        <span>{{ pendingOrdersCount }} pedidos pendientes · {{ lowStockCount }} productos por reponer</span>
+      </div>
+      <button type="button" class="primary-action" (click)="selectSection('orders')">
+        <ion-icon name="cart-outline"></ion-icon>
+        Nuevo pedido
+      </button>
+    </section>
+
+    <section class="quick-grid" aria-label="Acciones rapidas">
+      <button type="button" (click)="selectSection('orders')">
+        <ion-icon name="receipt-outline"></ion-icon>
+        <span>Vender</span>
+      </button>
+      <button type="button" (click)="selectSection('inventory')">
+        <ion-icon name="add-circle-outline"></ion-icon>
+        <span>Producto</span>
+      </button>
+      <button type="button" (click)="selectSection('customers')">
+        <ion-icon name="person-add-outline"></ion-icon>
+        <span>Cliente</span>
+      </button>
+    </section>
+
+    <nav class="module-tabs" aria-label="Secciones">
+      <button
+        type="button"
+        *ngFor="let section of sections"
+        [class.active]="selectedSegment === section.id"
+        (click)="selectSection(section.id)"
+      >
+        <ion-icon [name]="section.icon"></ion-icon>
+        <span>{{ section.label }}</span>
+      </button>
+    </nav>
+
+    <div class="notice" [class.offline]="!isOnline">
+      <ion-icon [name]="isOnline ? 'checkmark-circle-outline' : 'information-circle-outline'"></ion-icon>
+      <span>{{ actionMessage }}</span>
     </div>
-    <button type="button" class="sync-button" (click)="syncNow()">
-      <ion-icon name="cloud-upload-outline"></ion-icon>
-      Sincronizar
-    </button>
-  </section>
 
-  <nav class="module-grid" aria-label="Modulos">
-    <button
-      type="button"
-      *ngFor="let section of sections"
-      class="module-tile"
-      [class.active]="selectedSegment === section.id"
-      (click)="selectSection(section.id)"
-    >
-      <ion-icon [name]="section.icon"></ion-icon>
-      <strong>{{ section.label }}</strong>
-      <span>{{ section.description }}</span>
-    </button>
-  </nav>
-
-  <div class="notice">
-    <ion-icon name="information-circle-outline"></ion-icon>
-    <span>{{ actionMessage }}</span>
-  </div>
-
-  <main class="screen-shell">
     <ng-container [ngSwitch]="selectedSegment">
       <section *ngSwitchCase="'dashboard'" class="screen-panel">
-        <div class="panel-heading">
-          <div>
-            <p>Panel principal</p>
-            <h2>Resumen operativo</h2>
-          </div>
-          <button type="button" class="primary-action" (click)="selectSection('orders')">
-            <ion-icon name="cart-outline"></ion-icon>
-            Nuevo pedido
-          </button>
-        </div>
-
         <div class="metric-grid">
           <article class="metric-card">
-            <ion-icon name="medkit-outline"></ion-icon>
-            <strong>{{ medicines.length }}</strong>
             <span>Medicamentos</span>
+            <strong>{{ medicines.length }}</strong>
           </article>
           <article class="metric-card warning">
-            <ion-icon name="warning-outline"></ion-icon>
+            <span>Por reponer</span>
             <strong>{{ lowStockCount }}</strong>
-            <span>Alertas de stock</span>
           </article>
           <article class="metric-card info">
-            <ion-icon name="receipt-outline"></ion-icon>
+            <span>Pendientes</span>
             <strong>{{ pendingOrdersCount }}</strong>
-            <span>Pedidos pendientes</span>
           </article>
           <article class="metric-card value">
-            <ion-icon name="cash-outline"></ion-icon>
+            <span>Inventario</span>
             <strong>S/ {{ totalInventoryValue | number:'1.2-2' }}</strong>
-            <span>Valor inventario</span>
           </article>
         </div>
 
-        <section class="content-card">
+        <section class="content-card priority-card">
           <div class="card-heading">
-            <h3>Medicamentos por reponer</h3>
-            <span>{{ lowStockMedicines.length }} alertas</span>
+            <h2>Productos que necesitan reposicion</h2>
+            <span>{{ lowStockMedicines.length }}</span>
           </div>
           <div *ngIf="lowStockMedicines.length === 0" class="empty-state">
             <ion-icon name="checkmark-circle-outline"></ion-icon>
-            Todo el inventario esta por encima del stock minimo.
+            No hay alertas de stock.
           </div>
           <div class="data-row" *ngFor="let medicine of lowStockMedicines">
-            <div class="row-icon warning"><ion-icon name="alert-circle-outline"></ion-icon></div>
+            <div class="row-icon warning">
+              <ion-icon name="alert-outline"></ion-icon>
+            </div>
             <div class="row-body">
               <strong>{{ medicine.name }}</strong>
-              <span>Stock {{ medicine.stock }} | Minimo {{ medicine.minStock }}</span>
+              <span>Quedan {{ medicine.stock }} · minimo {{ medicine.minStock }}</span>
             </div>
             <span class="status-badge warning">Reponer</span>
+          </div>
+        </section>
+
+        <section class="content-card">
+          <div class="card-heading">
+            <h2>Ultimos pedidos</h2>
+            <span>{{ orders.length }}</span>
+          </div>
+          <div *ngIf="orders.length === 0" class="empty-state">
+            <ion-icon name="receipt-outline"></ion-icon>
+            Aun no hay pedidos registrados.
+          </div>
+          <div class="data-row" *ngFor="let order of orders.slice(0, 4)">
+            <div class="row-icon" [class.done]="order.status === 'Entregado'">
+              <ion-icon [name]="order.status === 'Entregado' ? 'checkmark-outline' : 'time-outline'"></ion-icon>
+            </div>
+            <div class="row-body">
+              <strong>{{ order.customerName }}</strong>
+              <span>{{ order.quantity }} x {{ order.medicineName }}</span>
+            </div>
+            <span class="status-badge" [class.done]="order.status === 'Entregado'">{{ order.status }}</span>
           </div>
         </section>
       </section>
 
       <section *ngSwitchCase="'inventory'" class="screen-panel">
-        <div class="panel-heading">
-          <div>
-            <p>Modulo de inventario</p>
-            <h2>Medicamentos y stock</h2>
-          </div>
-        </div>
-
         <section class="content-card form-card">
           <div class="card-heading">
-            <h3>{{ editingMedicineId ? 'Editar medicamento' : 'Registrar medicamento' }}</h3>
+            <h2>{{ editingMedicineId ? 'Editar medicamento' : 'Nuevo medicamento' }}</h2>
           </div>
           <div class="form-grid">
             <label>
               Nombre
-              <ion-input [(ngModel)]="medicineForm.name" placeholder="Ej. Ibuprofeno 400 mg"></ion-input>
+              <ion-input [(ngModel)]="medicineForm.name" placeholder="Paracetamol 500 mg"></ion-input>
             </label>
             <label>
               Categoria
-              <ion-input [(ngModel)]="medicineForm.category" placeholder="Ej. Antiinflamatorio"></ion-input>
+              <ion-input [(ngModel)]="medicineForm.category" placeholder="Analgésico"></ion-input>
             </label>
             <label>
-              Stock actual
+              Stock
               <ion-input type="number" [(ngModel)]="medicineForm.stock"></ion-input>
             </label>
             <label>
-              Stock minimo
+              Minimo
               <ion-input type="number" [(ngModel)]="medicineForm.minStock"></ion-input>
             </label>
             <label>
@@ -144,14 +157,18 @@
           </div>
           <button type="button" class="primary-action wide" (click)="addMedicine()">
             <ion-icon name="save-outline"></ion-icon>
-            {{ editingMedicineId ? 'Actualizar medicamento' : 'Guardar medicamento' }}
+            {{ editingMedicineId ? 'Actualizar' : 'Guardar' }}
           </button>
         </section>
 
         <section class="content-card">
           <div class="card-heading">
-            <h3>Inventario actual</h3>
-            <span>{{ medicines.length }} registros</span>
+            <h2>Inventario</h2>
+            <span>{{ medicines.length }} productos</span>
+          </div>
+          <div *ngIf="medicines.length === 0" class="empty-state">
+            <ion-icon name="medkit-outline"></ion-icon>
+            Registra tu primer medicamento.
           </div>
           <div class="data-row" *ngFor="let medicine of medicines">
             <div class="row-icon" [class.warning]="medicine.stock <= medicine.minStock">
@@ -159,7 +176,7 @@
             </div>
             <div class="row-body">
               <strong>{{ medicine.name }}</strong>
-              <span>{{ medicine.category }} | Stock {{ medicine.stock }} | Min {{ medicine.minStock }} | S/ {{ medicine.price | number:'1.2-2' }}</span>
+              <span>{{ medicine.category }} · stock {{ medicine.stock }} · S/ {{ medicine.price | number:'1.2-2' }}</span>
             </div>
             <div class="row-actions">
               <button type="button" (click)="editMedicine(medicine)" title="Editar">
@@ -174,47 +191,44 @@
       </section>
 
       <section *ngSwitchCase="'customers'" class="screen-panel">
-        <div class="panel-heading">
-          <div>
-            <p>Modulo de clientes</p>
-            <h2>Registro de clientes</h2>
-          </div>
-        </div>
-
         <section class="content-card form-card">
           <div class="card-heading">
-            <h3>{{ editingCustomerId ? 'Editar cliente' : 'Nuevo cliente' }}</h3>
+            <h2>{{ editingCustomerId ? 'Editar cliente' : 'Nuevo cliente' }}</h2>
           </div>
           <div class="form-grid two">
             <label>
-              Nombre completo
-              <ion-input [(ngModel)]="customerForm.name" placeholder="Ej. Maria Garcia"></ion-input>
+              Nombre
+              <ion-input [(ngModel)]="customerForm.name" placeholder="Maria Garcia"></ion-input>
             </label>
             <label>
               Telefono
               <ion-input type="tel" [(ngModel)]="customerForm.phone" placeholder="9XXXXXXXX"></ion-input>
             </label>
             <label>
-              Distrito
-              <ion-input [(ngModel)]="customerForm.district" placeholder="Ej. Comas"></ion-input>
+              Zona
+              <ion-input [(ngModel)]="customerForm.district" placeholder="Comas"></ion-input>
             </label>
           </div>
           <button type="button" class="primary-action wide" (click)="addCustomer()">
             <ion-icon name="save-outline"></ion-icon>
-            {{ editingCustomerId ? 'Actualizar cliente' : 'Guardar cliente' }}
+            {{ editingCustomerId ? 'Actualizar' : 'Guardar' }}
           </button>
         </section>
 
         <section class="content-card">
           <div class="card-heading">
-            <h3>Clientes registrados</h3>
-            <span>{{ customers.length }} clientes</span>
+            <h2>Clientes</h2>
+            <span>{{ customers.length }} registrados</span>
+          </div>
+          <div *ngIf="customers.length === 0" class="empty-state">
+            <ion-icon name="people-outline"></ion-icon>
+            Registra clientes frecuentes para atender mas rapido.
           </div>
           <div class="data-row" *ngFor="let customer of customers">
             <div class="avatar">{{ customer.name.charAt(0).toUpperCase() }}</div>
             <div class="row-body">
               <strong>{{ customer.name }}</strong>
-              <span>{{ customer.phone }} | {{ customer.district || 'Sin distrito' }}</span>
+              <span>{{ customer.phone }} · {{ customer.district || 'Sin zona' }}</span>
             </div>
             <div class="row-actions">
               <button type="button" (click)="editCustomer(customer)" title="Editar">
@@ -229,21 +243,14 @@
       </section>
 
       <section *ngSwitchCase="'orders'" class="screen-panel">
-        <div class="panel-heading">
-          <div>
-            <p>Modulo de pedidos</p>
-            <h2>Pedidos y entregas</h2>
-          </div>
-        </div>
-
         <section class="content-card form-card">
           <div class="card-heading">
-            <h3>Generar pedido</h3>
+            <h2>Nuevo pedido</h2>
           </div>
           <div class="form-grid two">
             <label>
               Cliente
-              <ion-select [(ngModel)]="orderForm.customerName" interface="popover" placeholder="Seleccionar cliente">
+              <ion-select [(ngModel)]="orderForm.customerName" interface="popover" placeholder="Seleccionar">
                 <ion-select-option *ngFor="let customer of customers" [value]="customer.name">
                   {{ customer.name }}
                 </ion-select-option>
@@ -251,9 +258,9 @@
             </label>
             <label>
               Medicamento
-              <ion-select [(ngModel)]="orderForm.medicineName" interface="popover" placeholder="Seleccionar medicamento">
+              <ion-select [(ngModel)]="orderForm.medicineName" interface="popover" placeholder="Seleccionar">
                 <ion-select-option *ngFor="let medicine of medicines" [value]="medicine.name">
-                  {{ medicine.name }} (stock {{ medicine.stock }})
+                  {{ medicine.name }} · {{ medicine.stock }} disp.
                 </ion-select-option>
               </ion-select>
             </label>
@@ -264,14 +271,18 @@
           </div>
           <button type="button" class="primary-action wide" (click)="createOrder()">
             <ion-icon name="cart-outline"></ion-icon>
-            Generar pedido
+            Registrar pedido
           </button>
         </section>
 
         <section class="content-card">
           <div class="card-heading">
-            <h3>Historial de pedidos</h3>
-            <span>{{ orders.length }} pedidos</span>
+            <h2>Pedidos</h2>
+            <span>{{ deliveredOrdersCount }} entregados</span>
+          </div>
+          <div *ngIf="orders.length === 0" class="empty-state">
+            <ion-icon name="receipt-outline"></ion-icon>
+            Aun no hay pedidos.
           </div>
           <div class="data-row" *ngFor="let order of orders">
             <div class="row-icon" [class.done]="order.status === 'Entregado'">
@@ -279,10 +290,10 @@
             </div>
             <div class="row-body">
               <strong>{{ order.customerName }}</strong>
-              <span>{{ order.quantity }} x {{ order.medicineName }} | {{ order.createdAt }}</span>
+              <span>{{ order.quantity }} x {{ order.medicineName }} · {{ order.createdAt }}</span>
             </div>
             <div class="row-actions">
-              <button *ngIf="order.status === 'Pendiente'" type="button" (click)="completeOrder(order.id)">
+              <button *ngIf="order.status === 'Pendiente'" type="button" (click)="completeOrder(order.id)" title="Entregado">
                 <ion-icon name="checkmark-outline"></ion-icon>
               </button>
               <span *ngIf="order.status === 'Entregado'" class="status-badge done">Entregado</span>
@@ -295,6 +306,4 @@
       </section>
     </ng-container>
   </main>
-
-  <footer class="app-footer">Farmacomas Control | {{ firebaseStatus }}</footer>
 </ion-content>
