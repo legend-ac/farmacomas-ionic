@@ -1,4 +1,4 @@
-package com.example.farmacommas_control;
+package com.farmacomas.control;
 
 import com.getcapacitor.BridgeActivity;
 
