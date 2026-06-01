@@ -13,8 +13,11 @@
           <span class="conn-dot"></span>
           {{ firebaseStatus }}
         </span>
-        <button type="button" class="hdr-btn" (click)="syncNow()" title="Sincronizar datos">
+        <button type="button" class="hdr-btn" (click)="syncNow()" title="Sincronizar datos" [disabled]="!isAuthenticated">
           <ion-icon name="sync-outline"></ion-icon>
+        </button>
+        <button *ngIf="isAuthenticated" type="button" class="hdr-btn" (click)="logout()" title="Cerrar sesion">
+          <ion-icon name="log-out-outline"></ion-icon>
         </button>
       </div>
     </div>
@@ -24,6 +27,33 @@
 
 <ion-content>
   <div class="page">
+    <section *ngIf="!authReady" class="card auth-card">
+      <div class="empty"><ion-icon name="time-outline"></ion-icon> Preparando acceso seguro...</div>
+    </section>
+
+    <section *ngIf="authReady && !isAuthenticated" class="card card--accent auth-card">
+      <header class="card-hd"><h2>{{ authMode === 'login' ? 'Acceso al sistema' : 'Crear usuario' }}</h2></header>
+      <div class="card-bd">
+        <div class="frm">
+          <label class="fld"><span class="fld-lbl">Correo</span><ion-input type="email" [(ngModel)]="authForm.email" placeholder="correo@botica.com"></ion-input></label>
+          <label class="fld"><span class="fld-lbl">Contrasena</span><ion-input type="password" [(ngModel)]="authForm.password" placeholder="Minimo 6 caracteres"></ion-input></label>
+          <button *ngIf="authMode === 'login'" type="button" class="btn" (click)="login()"><ion-icon name="log-in-outline"></ion-icon> Ingresar</button>
+          <button *ngIf="authMode === 'register'" type="button" class="btn" (click)="register()"><ion-icon name="person-add-outline"></ion-icon> Crear cuenta</button>
+          <div class="auth-actions">
+            <button type="button" class="link-btn" (click)="authMode = authMode === 'login' ? 'register' : 'login'">
+              {{ authMode === 'login' ? 'Crear nuevo usuario' : 'Ya tengo usuario' }}
+            </button>
+            <button type="button" class="link-btn" (click)="recoverPassword()">Recuperar contrasena</button>
+          </div>
+          <div class="msg msg--warn" *ngIf="authMessage">
+            <ion-icon name="alert-circle"></ion-icon>
+            <span>{{ authMessage }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <ng-container *ngIf="isAuthenticated">
 
     <!-- TABS -->
     <nav class="tabs">
@@ -191,13 +221,13 @@
             <div class="frm">
               <div class="fld-row fld-row--2">
                 <label class="fld"><span class="fld-lbl">Cliente</span>
-                  <ion-select [(ngModel)]="orderForm.customerName" interface="popover" placeholder="Seleccionar">
-                    <ion-select-option *ngFor="let c of customers" [value]="c.name">{{ c.name }}</ion-select-option>
+                  <ion-select [(ngModel)]="orderForm.customerId" interface="popover" placeholder="Seleccionar">
+                    <ion-select-option *ngFor="let c of customers" [value]="c.id">{{ c.name }}</ion-select-option>
                   </ion-select>
                 </label>
                 <label class="fld"><span class="fld-lbl">Medicamento</span>
-                  <ion-select [(ngModel)]="orderForm.medicineName" interface="popover" placeholder="Seleccionar">
-                    <ion-select-option *ngFor="let m of medicines" [value]="m.name">{{ m.name }} ({{ m.stock }})</ion-select-option>
+                  <ion-select [(ngModel)]="orderForm.medicineId" interface="popover" placeholder="Seleccionar">
+                    <ion-select-option *ngFor="let m of medicines" [value]="m.id">{{ m.name }} ({{ m.stock }})</ion-select-option>
                   </ion-select>
                 </label>
               </div>
@@ -229,6 +259,7 @@
     <footer class="foot">
       <span>Farmacomas Control v1.0</span>
     </footer>
+    </ng-container>
 
   </div>
 </ion-content>

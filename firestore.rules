@@ -2,16 +2,8 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /medicamentos/{document} {
-      allow read, write: if true;
-    }
-
-    match /clientes/{document} {
-      allow read, write: if true;
-    }
-
-    match /pedidos/{document} {
-      allow read, write: if true;
+    match /usuarios/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }

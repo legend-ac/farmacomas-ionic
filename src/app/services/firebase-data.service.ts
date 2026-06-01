@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { getApp, getApps, initializeApp } from 'firebase/app';
+import { FirebaseApp, getApp, getApps, initializeApp } from 'firebase/app';
 import {
   collection,
   deleteDoc,
@@ -7,9 +7,10 @@ import {
   Firestore,
   getDocs,
   getFirestore,
-  limit,
+  onSnapshot,
   query,
   setDoc,
+  Unsubscribe,
   writeBatch,
 } from 'firebase/firestore';
 import { environment } from '../../environments/environment';
@@ -32,7 +33,9 @@ interface FirestoreCustomer {
 }
 
 interface FirestoreOrder {
+  clienteId: number;
   clienteNombre: string;
+  medicamentoId: number;
   medicamentoNombre: string;
   cantidad: number;
   estado: 'Pendiente' | 'Entregado';
@@ -43,88 +46,62 @@ interface FirestoreOrder {
   providedIn: 'root',
 })
 export class FirebaseDataService {
+  private readonly app: FirebaseApp;
   private readonly db: Firestore;
+  private userId: string | null = null;
 
   constructor() {
-    const app = getApps().length > 0 ? getApp() : initializeApp(environment.firebase);
-    this.db = getFirestore(app);
+    this.app = getApps().length > 0 ? getApp() : initializeApp(environment.firebase);
+    this.db = getFirestore(this.app);
+  }
+
+  setUserId(userId: string | null): void {
+    this.userId = userId;
   }
 
   async testConnection(): Promise<void> {
-    await getDocs(query(collection(this.db, 'medicamentos'), limit(1)));
+    await getDocs(query(this.collectionRef('medicamentos')));
   }
 
   async getMedicines(): Promise<Medicine[]> {
-    const snapshot = await getDocs(collection(this.db, 'medicamentos'));
-
-    return snapshot.docs.map((item) => {
-      const data = item.data() as FirestoreMedicine;
-
-      return {
-        id: Number(item.id) || Date.now(),
-        name: data.nombre ?? 'Sin nombre',
-        category: data.categoria ?? 'General',
-        stock: Number(data.stockActual ?? 0),
-        minStock: Number(data.stockMinimo ?? 0),
-        price: Number(data.precioVenta ?? 0),
-      };
-    });
+    const snapshot = await getDocs(this.collectionRef('medicamentos'));
+    return snapshot.docs.map((item) => this.fromFirestoreMedicine(item.id, item.data() as FirestoreMedicine));
   }
 
   async getCustomers(): Promise<Customer[]> {
-    const snapshot = await getDocs(collection(this.db, 'clientes'));
-
-    return snapshot.docs.map((item) => {
-      const data = item.data() as FirestoreCustomer;
-
-      return {
-        id: Number(item.id) || Date.now(),
-        name: data.nombre ?? 'Sin nombre',
-        phone: data.telefono ?? '',
-        district: data.direccion ?? '',
-      };
-    });
+    const snapshot = await getDocs(this.collectionRef('clientes'));
+    return snapshot.docs.map((item) => this.fromFirestoreCustomer(item.id, item.data() as FirestoreCustomer));
   }
 
   async getOrders(): Promise<Order[]> {
-    const snapshot = await getDocs(collection(this.db, 'pedidos'));
-
-    return snapshot.docs.map((item) => {
-      const data = item.data() as FirestoreOrder;
-
-      return {
-        id: Number(item.id) || Date.now(),
-        customerName: data.clienteNombre ?? 'Cliente',
-        medicineName: data.medicamentoNombre ?? 'Medicamento',
-        quantity: Number(data.cantidad ?? 1),
-        status: data.estado === 'Entregado' ? 'Entregado' : 'Pendiente',
-        createdAt: data.creadoEn ?? new Date().toISOString().slice(0, 10),
-      };
-    });
+    const snapshot = await getDocs(this.collectionRef('pedidos'));
+    return snapshot.docs
+      .map((item) => this.fromFirestoreOrder(item.id, item.data() as FirestoreOrder))
+      .sort((a, b) => b.id - a.id);
   }
 
   async saveMedicine(medicine: Medicine): Promise<void> {
-    await setDoc(doc(this.db, 'medicamentos', String(medicine.id)), this.toFirestoreMedicine(medicine));
+    await setDoc(this.docRef('medicamentos', medicine.id), this.toFirestoreMedicine(medicine));
   }
 
   async saveCustomer(customer: Customer): Promise<void> {
-    await setDoc(doc(this.db, 'clientes', String(customer.id)), this.toFirestoreCustomer(customer));
+    await setDoc(this.docRef('clientes', customer.id), this.toFirestoreCustomer(customer));
   }
 
   async saveOrder(order: Order): Promise<void> {
-    await setDoc(doc(this.db, 'pedidos', String(order.id)), this.toFirestoreOrder(order));
+    await setDoc(this.docRef('pedidos', order.id), this.toFirestoreOrder(order));
   }
 
   async deleteMedicine(medicineId: number): Promise<void> {
-    await deleteDoc(doc(this.db, 'medicamentos', String(medicineId)));
+    await deleteDoc(this.docRef('medicamentos', medicineId));
   }
 
   async deleteCustomer(customerId: number): Promise<void> {
-    await deleteDoc(doc(this.db, 'clientes', String(customerId)));
+    await deleteDoc(this.docRef('clientes', customerId));
   }
 
   async deleteOrder(orderId: number): Promise<void> {
-    await deleteDoc(doc(this.db, 'pedidos', String(orderId)));
+    await deleteDoc(this.docRef('pedidos', orderId));
   }
 
   async loadAll(): Promise<AppData> {
@@ -137,11 +114,10 @@ export class FirebaseDataService {
     return { medicines, customers, orders };
   }
 
-  /** Atomic: saves order + updates medicine stock in a single batch commit */
   async saveOrderAndUpdateStock(order: Order, medicine: Medicine): Promise<void> {
     const batch = writeBatch(this.db);
-    batch.set(doc(this.db, 'pedidos', String(order.id)), this.toFirestoreOrder(order));
-    batch.set(doc(this.db, 'medicamentos', String(medicine.id)), this.toFirestoreMedicine(medicine));
+    batch.set(this.docRef('pedidos', order.id), this.toFirestoreOrder(order));
+    batch.set(this.docRef('medicamentos', medicine.id), this.toFirestoreMedicine(medicine));
     await batch.commit();
   }
 
@@ -149,18 +125,113 @@ export class FirebaseDataService {
     const batch = writeBatch(this.db);
 
     medicines.forEach((medicine) => {
-      batch.set(doc(this.db, 'medicamentos', String(medicine.id)), this.toFirestoreMedicine(medicine));
+      batch.set(this.docRef('medicamentos', medicine.id), this.toFirestoreMedicine(medicine));
     });
 
     customers.forEach((customer) => {
-      batch.set(doc(this.db, 'clientes', String(customer.id)), this.toFirestoreCustomer(customer));
+      batch.set(this.docRef('clientes', customer.id), this.toFirestoreCustomer(customer));
     });
 
     orders.forEach((order) => {
-      batch.set(doc(this.db, 'pedidos', String(order.id)), this.toFirestoreOrder(order));
+      batch.set(this.docRef('pedidos', order.id), this.toFirestoreOrder(order));
     });
 
     await batch.commit();
+  }
+
+  subscribeToUserData(onData: (data: AppData) => void, onError: () => void): Unsubscribe {
+    const current: AppData = { medicines: [], customers: [], orders: [] };
+    const emit = () => {
+      onData({
+        medicines: [...current.medicines],
+        customers: [...current.customers],
+        orders: [...current.orders].sort((a, b) => b.id - a.id),
+      });
+    };
+
+    const unsubscribers = [
+      onSnapshot(
+        this.collectionRef('medicamentos'),
+        (snapshot) => {
+          current.medicines = snapshot.docs.map((item) =>
+            this.fromFirestoreMedicine(item.id, item.data() as FirestoreMedicine)
+          );
+          emit();
+        },
+        onError
+      ),
+      onSnapshot(
+        this.collectionRef('clientes'),
+        (snapshot) => {
+          current.customers = snapshot.docs.map((item) =>
+            this.fromFirestoreCustomer(item.id, item.data() as FirestoreCustomer)
+          );
+          emit();
+        },
+        onError
+      ),
+      onSnapshot(
+        this.collectionRef('pedidos'),
+        (snapshot) => {
+          current.orders = snapshot.docs.map((item) =>
+            this.fromFirestoreOrder(item.id, item.data() as FirestoreOrder)
+          );
+          emit();
+        },
+        onError
+      ),
+    ];
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }
+
+  private collectionRef(name: 'medicamentos' | 'clientes' | 'pedidos') {
+    return collection(this.db, 'usuarios', this.requireUserId(), name);
+  }
+
+  private docRef(name: 'medicamentos' | 'clientes' | 'pedidos', id: number) {
+    return doc(this.db, 'usuarios', this.requireUserId(), name, String(id));
+  }
+
+  private requireUserId(): string {
+    if (!this.userId) {
+      throw new Error('No hay usuario autenticado.');
+    }
+
+    return this.userId;
+  }
+
+  private fromFirestoreMedicine(id: string, data: FirestoreMedicine): Medicine {
+    return {
+      id: Number(id),
+      name: data.nombre ?? 'Sin nombre',
+      category: data.categoria ?? 'General',
+      stock: Number(data.stockActual ?? 0),
+      minStock: Number(data.stockMinimo ?? 0),
+      price: Number(data.precioVenta ?? 0),
+    };
+  }
+
+  private fromFirestoreCustomer(id: string, data: FirestoreCustomer): Customer {
+    return {
+      id: Number(id),
+      name: data.nombre ?? 'Sin nombre',
+      phone: data.telefono ?? '',
+      district: data.direccion ?? '',
+    };
+  }
+
+  private fromFirestoreOrder(id: string, data: FirestoreOrder): Order {
+    return {
+      id: Number(id),
+      customerId: Number(data.clienteId ?? 0),
+      customerName: data.clienteNombre ?? 'Cliente',
+      medicineId: Number(data.medicamentoId ?? 0),
+      medicineName: data.medicamentoNombre ?? 'Medicamento',
+      quantity: Number(data.cantidad ?? 1),
+      status: data.estado === 'Entregado' ? 'Entregado' : 'Pendiente',
+      createdAt: data.creadoEn ?? new Date().toISOString().slice(0, 10),
+    };
   }
 
   private toFirestoreMedicine(medicine: Medicine): FirestoreMedicine {
@@ -185,7 +256,9 @@ export class FirebaseDataService {
 
   private toFirestoreOrder(order: Order): FirestoreOrder {
     return {
+      clienteId: order.customerId,
       clienteNombre: order.customerName,
+      medicamentoId: order.medicineId,
       medicamentoNombre: order.medicineName,
       cantidad: order.quantity,
       estado: order.status,

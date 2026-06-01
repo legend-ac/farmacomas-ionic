@@ -1,5 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnDestroy } from '@angular/core';
+import { Unsubscribe, User } from 'firebase/auth';
 import { AppData, Customer, Medicine, Order } from '../core/models';
+import { FirebaseAuthService } from '../services/firebase-auth.service';
 import { FirebaseDataService } from '../services/firebase-data.service';
 
 @Component({
@@ -8,11 +10,15 @@ import { FirebaseDataService } from '../services/firebase-data.service';
   styleUrls: ['home.page.scss'],
   standalone: false,
 })
-export class HomePage {
+export class HomePage implements OnDestroy {
   selectedSegment: 'dashboard' | 'inventory' | 'customers' | 'orders' = 'dashboard';
   firebaseStatus = 'Conectando...';
-  actionMessage = 'Listo para atender.';
-  isOnline = true;
+  actionMessage = 'Inicia sesion para atender.';
+  isOnline = false;
+  authReady = false;
+  currentUser: User | null = null;
+  authMode: 'login' | 'register' = 'login';
+  authMessage = '';
   editingMedicineId: number | null = null;
   editingCustomerId: number | null = null;
 
@@ -22,6 +28,11 @@ export class HomePage {
   medicines: Medicine[] = [];
   customers: Customer[] = [];
   orders: Order[] = [];
+
+  authForm = {
+    email: '',
+    password: '',
+  };
 
   medicineForm = {
     name: '',
@@ -38,8 +49,8 @@ export class HomePage {
   };
 
   orderForm = {
-    customerName: '',
-    medicineName: '',
+    customerId: 0,
+    medicineId: 0,
     quantity: 1,
   };
 
@@ -70,12 +81,26 @@ export class HomePage {
     },
   ];
 
-  constructor(private readonly firebaseDataService: FirebaseDataService) {
-    this.loadData();
-    void this.syncFromFirebase();
+  private authUnsubscribe: Unsubscribe | null = null;
+  private dataUnsubscribe: Unsubscribe | null = null;
+
+  constructor(
+    private readonly firebaseAuthService: FirebaseAuthService,
+    private readonly firebaseDataService: FirebaseDataService
+  ) {
+    this.authUnsubscribe = this.firebaseAuthService.onUserChanged((user) => {
+      void this.handleAuthState(user);
+    });
   }
 
-  // ── Computed ──
+  ngOnDestroy(): void {
+    this.authUnsubscribe?.();
+    this.dataUnsubscribe?.();
+  }
+
+  get isAuthenticated(): boolean {
+    return !!this.currentUser;
+  }
 
   get totalInventoryValue(): number {
     return this.medicines.reduce((total, medicine) => total + medicine.stock * medicine.price, 0);
@@ -101,7 +126,8 @@ export class HomePage {
     const term = this.searchMedicine.trim().toLowerCase();
     if (!term) return this.medicines;
     return this.medicines.filter(
-      (m) => m.name.toLowerCase().includes(term) || m.category.toLowerCase().includes(term)
+      (medicine) =>
+        medicine.name.toLowerCase().includes(term) || medicine.category.toLowerCase().includes(term)
     );
   }
 
@@ -109,19 +135,70 @@ export class HomePage {
     const term = this.searchCustomer.trim().toLowerCase();
     if (!term) return this.customers;
     return this.customers.filter(
-      (c) => c.name.toLowerCase().includes(term) || c.phone.includes(term) || c.district.toLowerCase().includes(term)
+      (customer) =>
+        customer.name.toLowerCase().includes(term) ||
+        customer.phone.includes(term) ||
+        customer.district.toLowerCase().includes(term)
     );
   }
-
-  // ── Navigation ──
 
   selectSection(section: 'dashboard' | 'inventory' | 'customers' | 'orders'): void {
     this.selectedSegment = section;
   }
 
-  // ── Medicine CRUD ──
+  async login(): Promise<void> {
+    if (!this.authForm.email.trim() || !this.authForm.password) {
+      this.authMessage = 'Ingresa correo y contrasena.';
+      return;
+    }
+
+    try {
+      this.authMessage = 'Ingresando...';
+      await this.firebaseAuthService.login(this.authForm.email, this.authForm.password);
+      this.authForm.password = '';
+      this.authMessage = '';
+    } catch {
+      this.authMessage = 'No se pudo iniciar sesion. Revisa correo y contrasena.';
+    }
+  }
+
+  async register(): Promise<void> {
+    if (!this.authForm.email.trim() || this.authForm.password.length < 6) {
+      this.authMessage = 'Usa un correo valido y minimo 6 caracteres.';
+      return;
+    }
+
+    try {
+      this.authMessage = 'Creando usuario...';
+      await this.firebaseAuthService.register(this.authForm.email, this.authForm.password);
+      this.authForm.password = '';
+      this.authMessage = '';
+    } catch {
+      this.authMessage = 'No se pudo crear el usuario. Verifica si el correo ya existe.';
+    }
+  }
+
+  async recoverPassword(): Promise<void> {
+    if (!this.authForm.email.trim()) {
+      this.authMessage = 'Ingresa tu correo para recuperar acceso.';
+      return;
+    }
+
+    try {
+      await this.firebaseAuthService.recoverPassword(this.authForm.email);
+      this.authMessage = 'Te enviamos un correo de recuperacion.';
+    } catch {
+      this.authMessage = 'No se pudo enviar la recuperacion. Revisa el correo.';
+    }
+  }
+
+  async logout(): Promise<void> {
+    await this.firebaseAuthService.logout();
+  }
 
   addMedicine(): void {
+    if (!this.ensureAuthenticated()) return;
+
     if (!this.medicineForm.name.trim() || !this.medicineForm.category.trim()) {
       this.actionMessage = 'Ingresa el nombre y la categoria del medicamento.';
       return;
@@ -133,7 +210,7 @@ export class HomePage {
     }
 
     const medicine: Medicine = {
-      id: this.editingMedicineId ?? Date.now(),
+      id: this.editingMedicineId ?? this.createId(),
       name: this.medicineForm.name.trim(),
       category: this.medicineForm.category.trim(),
       stock: Number(this.medicineForm.stock),
@@ -144,6 +221,10 @@ export class HomePage {
     this.medicines = this.editingMedicineId
       ? this.medicines.map((item) => (item.id === this.editingMedicineId ? medicine : item))
       : [...this.medicines, medicine];
+
+    this.orders = this.orders.map((order) =>
+      order.medicineId === medicine.id ? { ...order, medicineName: medicine.name } : order
+    );
 
     this.medicineForm = { name: '', category: '', stock: 0, minStock: 5, price: 0 };
     this.editingMedicineId = null;
@@ -165,16 +246,16 @@ export class HomePage {
     this.actionMessage = 'Editando medicamento.';
   }
 
-  // ── Customer CRUD ──
-
   addCustomer(): void {
+    if (!this.ensureAuthenticated()) return;
+
     if (!this.customerForm.name.trim() || !this.customerForm.phone.trim()) {
       this.actionMessage = 'Ingresa el nombre y telefono del cliente.';
       return;
     }
 
     const customer: Customer = {
-      id: this.editingCustomerId ?? Date.now(),
+      id: this.editingCustomerId ?? this.createId(),
       name: this.customerForm.name.trim(),
       phone: this.customerForm.phone.trim(),
       district: this.customerForm.district.trim(),
@@ -183,6 +264,10 @@ export class HomePage {
     this.customers = this.editingCustomerId
       ? this.customers.map((item) => (item.id === this.editingCustomerId ? customer : item))
       : [...this.customers, customer];
+
+    this.orders = this.orders.map((order) =>
+      order.customerId === customer.id ? { ...order, customerName: customer.name } : order
+    );
 
     this.customerForm = { name: '', phone: '', district: '' };
     this.editingCustomerId = null;
@@ -202,25 +287,33 @@ export class HomePage {
     this.actionMessage = 'Editando cliente.';
   }
 
-  // ── Order CRUD (atomic stock update) ──
-
   createOrder(): void {
-    if (!this.orderForm.customerName || !this.orderForm.medicineName || this.orderForm.quantity < 1) {
+    if (!this.ensureAuthenticated()) return;
+
+    if (!this.orderForm.customerId || !this.orderForm.medicineId || this.orderForm.quantity < 1) {
       this.actionMessage = 'Selecciona cliente, medicamento y cantidad.';
       return;
     }
 
-    const selectedMedicine = this.medicines.find((medicine) => medicine.name === this.orderForm.medicineName);
+    const selectedCustomer = this.customers.find((customer) => customer.id === Number(this.orderForm.customerId));
+    const selectedMedicine = this.medicines.find((medicine) => medicine.id === Number(this.orderForm.medicineId));
 
-    if (!selectedMedicine || selectedMedicine.stock < this.orderForm.quantity) {
+    if (!selectedCustomer || !selectedMedicine) {
+      this.actionMessage = 'Selecciona datos validos para el pedido.';
+      return;
+    }
+
+    if (selectedMedicine.stock < this.orderForm.quantity) {
       this.actionMessage = 'No hay stock suficiente para este pedido.';
       return;
     }
 
     const order: Order = {
-      id: Date.now(),
-      customerName: this.orderForm.customerName,
-      medicineName: this.orderForm.medicineName,
+      id: this.createId(),
+      customerId: selectedCustomer.id,
+      customerName: selectedCustomer.name,
+      medicineId: selectedMedicine.id,
+      medicineName: selectedMedicine.name,
       quantity: Number(this.orderForm.quantity),
       status: 'Pendiente',
       createdAt: new Date().toISOString().slice(0, 10),
@@ -237,13 +330,15 @@ export class HomePage {
 
     this.orders = [order, ...this.orders];
 
-    this.orderForm = { customerName: '', medicineName: '', quantity: 1 };
+    this.orderForm = { customerId: 0, medicineId: 0, quantity: 1 };
     this.actionMessage = 'Pedido creado y stock descontado.';
     this.saveData();
     void this.saveOrderWithStockAtomic(order, updatedMedicine);
   }
 
   completeOrder(orderId: number): void {
+    if (!this.ensureAuthenticated()) return;
+
     let updatedOrder: Order | undefined;
 
     this.orders = this.orders.map((order) =>
@@ -259,6 +354,17 @@ export class HomePage {
   }
 
   deleteMedicine(medicineId: number): void {
+    if (!this.ensureAuthenticated()) return;
+
+    const hasPendingOrder = this.orders.some(
+      (order) => order.medicineId === medicineId && order.status === 'Pendiente'
+    );
+
+    if (hasPendingOrder) {
+      this.actionMessage = 'No elimines un medicamento con pedidos pendientes.';
+      return;
+    }
+
     this.medicines = this.medicines.filter((medicine) => medicine.id !== medicineId);
     this.actionMessage = 'Medicamento eliminado.';
     this.saveData();
@@ -266,6 +372,17 @@ export class HomePage {
   }
 
   deleteCustomer(customerId: number): void {
+    if (!this.ensureAuthenticated()) return;
+
+    const hasPendingOrder = this.orders.some(
+      (order) => order.customerId === customerId && order.status === 'Pendiente'
+    );
+
+    if (hasPendingOrder) {
+      this.actionMessage = 'No elimines un cliente con pedidos pendientes.';
+      return;
+    }
+
     this.customers = this.customers.filter((customer) => customer.id !== customerId);
     this.actionMessage = 'Cliente eliminado.';
     this.saveData();
@@ -273,6 +390,8 @@ export class HomePage {
   }
 
   deleteOrder(orderId: number): void {
+    if (!this.ensureAuthenticated()) return;
+
     this.orders = this.orders.filter((order) => order.id !== orderId);
     this.actionMessage = 'Pedido eliminado.';
     this.saveData();
@@ -280,14 +399,35 @@ export class HomePage {
   }
 
   async syncNow(): Promise<void> {
+    if (!this.ensureAuthenticated()) return;
+
     this.actionMessage = 'Sincronizando...';
     await this.syncToCloud();
   }
 
-  // ── Persistence ──
+  private async handleAuthState(user: User | null): Promise<void> {
+    this.authReady = true;
+    this.currentUser = user;
+    this.dataUnsubscribe?.();
+    this.dataUnsubscribe = null;
+    this.firebaseDataService.setUserId(user?.uid ?? null);
 
-  private loadData(): void {
-    const savedData = localStorage.getItem('farmacomas-ionic-data');
+    if (!user) {
+      this.resetData();
+      this.isOnline = false;
+      this.firebaseStatus = 'Sin sesion';
+      this.actionMessage = 'Inicia sesion para atender.';
+      return;
+    }
+
+    this.loadData(user.uid);
+    await this.syncFromFirebase();
+    this.startRealtimeSync();
+  }
+
+  private loadData(userId: string): void {
+    const savedData =
+      localStorage.getItem(this.localStorageKey(userId)) ?? localStorage.getItem('farmacomas-ionic-data');
 
     if (!savedData) {
       return;
@@ -298,19 +438,19 @@ export class HomePage {
     try {
       parsedData = JSON.parse(savedData) as AppData;
     } catch {
-      localStorage.removeItem('farmacomas-ionic-data');
+      localStorage.removeItem(this.localStorageKey(userId));
       this.actionMessage = 'Se limpio una copia local invalida. El sistema sigue operativo.';
       return;
     }
 
-    this.medicines = parsedData.medicines ?? this.medicines;
-    this.customers = parsedData.customers ?? this.customers;
-    this.orders = parsedData.orders ?? this.orders;
+    this.applyData(parsedData);
   }
 
   private saveData(): void {
+    if (!this.currentUser) return;
+
     localStorage.setItem(
-      'farmacomas-ionic-data',
+      this.localStorageKey(this.currentUser.uid),
       JSON.stringify({
         medicines: this.medicines,
         customers: this.customers,
@@ -319,33 +459,43 @@ export class HomePage {
     );
   }
 
-  // ── Cloud sync ──
-
   private async syncFromFirebase(): Promise<void> {
     try {
       await this.firebaseDataService.testConnection();
+      const remoteData = await this.firebaseDataService.loadAll();
+      const hasRemoteData =
+        remoteData.medicines.length > 0 || remoteData.customers.length > 0 || remoteData.orders.length > 0;
 
-      const { medicines, customers, orders } = await this.firebaseDataService.loadAll();
-
-      if (medicines.length > 0) {
-        this.medicines = medicines;
-      }
-
-      if (customers.length > 0) {
-        this.customers = customers;
-      }
-
-      if (orders.length > 0) {
-        this.orders = orders;
+      if (hasRemoteData) {
+        this.applyData(remoteData);
+      } else if (this.medicines.length > 0 || this.customers.length > 0 || this.orders.length > 0) {
+        await this.firebaseDataService.syncAll(this.medicines, this.customers, this.orders);
       }
 
       this.saveData();
       this.isOnline = true;
       this.firebaseStatus = 'Datos actualizados';
+      this.actionMessage = 'Listo para atender.';
     } catch {
       this.isOnline = false;
       this.firebaseStatus = 'Sin conexion';
+      this.actionMessage = 'Cambios guardados localmente.';
     }
+  }
+
+  private startRealtimeSync(): void {
+    this.dataUnsubscribe = this.firebaseDataService.subscribeToUserData(
+      (data) => {
+        this.applyData(data);
+        this.saveData();
+        this.isOnline = true;
+        this.firebaseStatus = 'Datos actualizados';
+      },
+      () => {
+        this.isOnline = false;
+        this.firebaseStatus = 'Sin conexion';
+      }
+    );
   }
 
   private async syncToCloud(): Promise<void> {
@@ -364,6 +514,7 @@ export class HomePage {
   private async saveMedicineToCloud(medicine: Medicine): Promise<void> {
     try {
       await this.firebaseDataService.saveMedicine(medicine);
+      await this.syncChangedOrderNames();
       this.isOnline = true;
       this.firebaseStatus = 'Datos actualizados';
     } catch {
@@ -375,6 +526,7 @@ export class HomePage {
   private async saveCustomerToCloud(customer: Customer): Promise<void> {
     try {
       await this.firebaseDataService.saveCustomer(customer);
+      await this.syncChangedOrderNames();
       this.isOnline = true;
       this.firebaseStatus = 'Datos actualizados';
     } catch {
@@ -394,7 +546,6 @@ export class HomePage {
     }
   }
 
-  /** Atomic: saves order AND updates stock in a single Firestore batch */
   private async saveOrderWithStockAtomic(order: Order, medicine: Medicine): Promise<void> {
     try {
       await this.firebaseDataService.saveOrderAndUpdateStock(order, medicine);
@@ -438,5 +589,72 @@ export class HomePage {
       this.isOnline = false;
       this.firebaseStatus = 'Sin conexion';
     }
+  }
+
+  private async syncChangedOrderNames(): Promise<void> {
+    const updatedOrders = this.orders.map((order) => {
+      const customer = this.customers.find((item) => item.id === order.customerId);
+      const medicine = this.medicines.find((item) => item.id === order.medicineId);
+      return {
+        ...order,
+        customerName: customer?.name ?? order.customerName,
+        medicineName: medicine?.name ?? order.medicineName,
+      };
+    });
+
+    const changedOrders = updatedOrders.filter((updatedOrder) => {
+      const previousOrder = this.orders.find((order) => order.id === updatedOrder.id);
+      return (
+        previousOrder &&
+        (previousOrder.customerName !== updatedOrder.customerName ||
+          previousOrder.medicineName !== updatedOrder.medicineName)
+      );
+    });
+
+    this.orders = updatedOrders;
+
+    await Promise.all(changedOrders.map((order) => this.firebaseDataService.saveOrder(order)));
+  }
+
+  private applyData(data: AppData): void {
+    this.medicines = data.medicines ?? [];
+    this.customers = data.customers ?? [];
+    this.orders = (data.orders ?? []).map((order) => ({
+      ...order,
+      customerId: order.customerId ?? this.findCustomerId(order.customerName),
+      medicineId: order.medicineId ?? this.findMedicineId(order.medicineName),
+    }));
+  }
+
+  private resetData(): void {
+    this.medicines = [];
+    this.customers = [];
+    this.orders = [];
+    this.editingMedicineId = null;
+    this.editingCustomerId = null;
+    this.orderForm = { customerId: 0, medicineId: 0, quantity: 1 };
+  }
+
+  private ensureAuthenticated(): boolean {
+    if (this.currentUser) return true;
+
+    this.actionMessage = 'Inicia sesion para continuar.';
+    return false;
+  }
+
+  private localStorageKey(userId: string): string {
+    return `farmacomas-ionic-data-${userId}`;
+  }
+
+  private createId(): number {
+    return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  }
+
+  private findCustomerId(name: string): number {
+    return this.customers.find((customer) => customer.name === name)?.id ?? 0;
+  }
+
+  private findMedicineId(name: string): number {
+    return this.medicines.find((medicine) => medicine.name === name)?.id ?? 0;
   }
 }

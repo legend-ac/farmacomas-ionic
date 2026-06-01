@@ -3,6 +3,7 @@
 log.txt
 firebase-debug.log
 build-log.txt
+auth-users-check.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

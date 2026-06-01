@@ -65,6 +65,7 @@ ion-toolbar { --background: var(--surface); --border-width: 0; --min-height: aut
   width: 38px;
 }
 .hdr-btn:hover { background: var(--sky-100); box-shadow: var(--sh-sm); }
+.hdr-btn:disabled { cursor: not-allowed; opacity: 0.45; }
 
 .hdr-accent { background: linear-gradient(90deg, var(--sky-400), var(--sky-200), transparent); height: 2px; }
 
@@ -262,6 +263,20 @@ ion-content { --background: var(--bg); }
 .card-hd h2 { color: var(--n-800); font-size: 14px; font-weight: 700; margin: 0; }
 
 .card-bd { padding: 0; }
+
+.auth-card { margin: 24px auto 16px; max-width: 460px; }
+.auth-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
+.link-btn {
+  background: transparent;
+  border: none;
+  color: var(--sky-600);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.link-btn:hover { color: var(--sky-700); text-decoration: underline; }
 
 /* ══════════ BADGE ══════════ */
 .badge { background: var(--n-100); border-radius: 20px; color: var(--n-500); font-size: 11px; font-weight: 700; padding: 3px 10px; }

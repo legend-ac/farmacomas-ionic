@@ -16,7 +16,9 @@ export interface Customer {
 
 export interface Order {
   id: number;
+  customerId: number;
   customerName: string;
+  medicineId: number;
   medicineName: string;
   quantity: number;
   status: 'Pendiente' | 'Entregado';
