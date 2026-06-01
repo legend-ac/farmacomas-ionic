@@ -97,6 +97,10 @@
   padding: 22px 18px;
 }
 
+.summary-copy {
+  min-width: 0;
+}
+
 .summary-copy p,
 .panel-heading p {
   font-size: 12px;
@@ -114,6 +118,9 @@
 
 .summary-copy span {
   color: rgba(255, 255, 255, 0.86);
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 button {
