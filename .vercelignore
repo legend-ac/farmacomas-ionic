@@ -1,0 +1,9 @@
+node_modules
+.angular
+www
+coverage
+android/.gradle
+android/app/build
+android/build
+*.log
+firebase-debug.log
