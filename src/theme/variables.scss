@@ -1,7 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 :root {
-  /* ─── Sky / Celeste ─── */
+  /* ─── Brand Blue (farmacéutico profesional) ─── */
+  --brand-50:  #eff6ff;
+  --brand-100: #dbeafe;
+  --brand-200: #bfdbfe;
+  --brand-300: #93c5fd;
+  --brand-400: #60a5fa;
+  --brand-500: #3b82f6;
+  --brand-600: #1a56db;
+  --brand-700: #1e40af;
+  --brand-800: #1e3a8a;
+  --brand-gradient: #1a56db;
+
+  /* ─── Sky / Celeste (acento secundario) ─── */
   --sky-50:  #f0f9ff;
   --sky-100: #e0f2fe;
   --sky-200: #bae6fd;
@@ -11,7 +23,7 @@
   --sky-600: #0284c7;
   --sky-700: #0369a1;
 
-  /* ─── Sand / Beige ─── */
+  /* ─── Sand / Beige (fondos cálidos) ─── */
   --sand-50:  #fefdfb;
   --sand-100: #faf8f4;
   --sand-200: #f4efe6;
@@ -29,44 +41,44 @@
   --n-800: #1e293b;
   --n-900: #0f172a;
 
-  /* ─── Semantic ─── */
+  /* ─── Semánticos ─── */
   --ok:   #059669;
   --warn: #d97706;
   --err:  #dc2626;
 
   /* ─── Layout ─── */
-  --bg:      var(--sand-50);
+  --bg:      #f0f4f8;
   --surface: #ffffff;
   --border:  var(--n-200);
-  --r:       10px;
+  --r:       12px;
 
-  /* ─── Shadows ─── */
-  --sh-sm: 0 1px 2px rgba(0,0,0,0.04);
-  --sh-md: 0 2px 8px rgba(0,0,0,0.06);
-  --sh-lg: 0 4px 16px rgba(0,0,0,0.08);
+  /* ─── Sombras ─── */
+  --sh-sm: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+  --sh-md: 0 4px 12px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+  --sh-lg: 0 8px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.05);
 
-  /* ─── Ionic ─── */
-  --ion-font-family: 'Inter', system-ui, sans-serif;
+  /* ─── Ionic variables ─── */
+  --ion-font-family: 'Inter', system-ui, -apple-system, sans-serif;
   --ion-background-color: var(--bg);
   --ion-text-color: var(--n-800);
   --ion-toolbar-background: var(--surface);
   --ion-item-background: transparent;
 
-  --ion-color-primary: #0ea5e9;
-  --ion-color-primary-rgb: 14,165,233;
-  --ion-color-primary-contrast: #fff;
-  --ion-color-primary-contrast-rgb: 255,255,255;
-  --ion-color-primary-shade: #0284c7;
-  --ion-color-primary-tint: #38bdf8;
+  --ion-color-primary:                 #1a56db;
+  --ion-color-primary-rgb:             26,86,219;
+  --ion-color-primary-contrast:        #ffffff;
+  --ion-color-primary-contrast-rgb:    255,255,255;
+  --ion-color-primary-shade:           #1e40af;
+  --ion-color-primary-tint:            #3b82f6;
 
-  --ion-color-secondary: #64748b;
-  --ion-color-secondary-rgb: 100,116,139;
-  --ion-color-secondary-contrast: #fff;
-  --ion-color-secondary-contrast-rgb: 255,255,255;
-  --ion-color-secondary-shade: #475569;
-  --ion-color-secondary-tint: #94a3b8;
+  --ion-color-secondary:               #64748b;
+  --ion-color-secondary-rgb:           100,116,139;
+  --ion-color-secondary-contrast:      #ffffff;
+  --ion-color-secondary-contrast-rgb:  255,255,255;
+  --ion-color-secondary-shade:         #475569;
+  --ion-color-secondary-tint:          #94a3b8;
 
   --ion-color-success: #059669;
   --ion-color-warning: #d97706;
-  --ion-color-danger: #dc2626;
+  --ion-color-danger:  #dc2626;
 }
